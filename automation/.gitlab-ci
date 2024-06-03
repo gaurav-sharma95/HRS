@@ -1,0 +1,50 @@
+stages:
+  - build
+  - test
+  - deploy
+
+variables:
+  AWS_DEFAULT_REGION: "your_region"
+  AWS_ACCESS_KEY_ID: "$AWS_ACCESS_KEY_ID"
+  AWS_SECRET_ACCESS_KEY: "$AWS_SECRET_ACCESS_KEY"
+  AWS_DEFAULT_OUTPUT: "json"
+
+#This stage will build the java application
+build_stage:
+  stage: build
+  script:
+    - mvn clean install
+  artifacts:
+    paths:
+      - target/demo-0.0.1-SNAPSHOT.war
+
+# This stage will execute the unit tests
+test_stage:
+  stage: test
+  script:
+    - echo "Running tests...."
+    - mvn test
+  after_script:
+    - echo "Tests completed."
+
+# This stage to put image into ECR
+docker_build:
+  stage: deploy
+  script:
+    - echo "$AWS_ECR_REGISTRY_PASSWORD" | docker login --username "$AWS_ECR_REGISTRY_USERNAME" --password-stdin "$AWS_ECR_REGISTRY_URL"
+    - docker build -t $AWS_ECR_REGISTRY_URL/$AWS_ECR_REPOSITORY_NAME .
+    - docker push $AWS_ECR_REGISTRY_URL/$AWS_ECR_REPOSITORY_NAME
+  only:
+    - main
+
+#This stage to deploy Image pushed in ECR to EKS
+deploy_to_eks:
+  stage: deploy
+  script:
+    - echo "Deploying to Amazon EKS..."
+    - kubectl rollout restart deployment $DEPLOYMENT-NAME -n NAMESPACE
+  needs:
+    - test_stage
+  when: on_success
+  only:
+    - main
